@@ -3,12 +3,12 @@
 // Replace these with your actual Meta App credentials
 
 // Meta App Credentials
-define('META_APP_ID', '1937296900380988');
-define('META_APP_SECRET', 'c6de144182b4bae47636f8e0067aa9f3');
+define('META_APP_ID', '<APP_ID>');
+define('META_APP_SECRET', '<APP_SECRET>');
 
 // OAuth Configuration
 // define('META_REDIRECT_URI', 'http://localhost/jj-reports-dashboard-2/oauth_callback.php');
-define('META_REDIRECT_URI', 'https://326e01eb5e77.ngrok-free.app/jj-reports-dashboard-2/oauth_callback.php');
+define('META_REDIRECT_URI', '<URL_HERE');
 define('META_SCOPE', 'public_profile,email,ads_read,business_management');
 
 // Database Configuration
