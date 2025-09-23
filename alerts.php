@@ -79,11 +79,12 @@ if ($_POST['action'] ?? '' === 'create_rule') {
     
     if (!empty($name) && !empty($rule_type) && !empty($condition) && !empty($threshold_value)) {
         try {
-            $stmt = $pdo->prepare("INSERT INTO alert_rules (name, description, rule_type, condition, threshold_value, scope, platform_filter, country_filter, objective_filter, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt = $pdo->prepare("INSERT INTO alert_rules (name, description, rule_type, `condition`, threshold_value, scope, platform_filter, country_filter, objective_filter, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([$name, $description, $rule_type, $condition, $threshold_value, $scope, $platform_filter, $country_filter, $objective_filter, $admin_id]);
             $success_message = "Alert rule created successfully!";
         } catch(PDOException $e) {
             $error_message = "Error creating alert rule: " . $e->getMessage();
+            error_log("Alert rule creation error: " . $e->getMessage());
         }
     } else {
         $error_message = "Please fill in all required fields.";
@@ -94,8 +95,8 @@ if ($_POST['action'] ?? '' === 'update_settings') {
     $email_notifications = isset($_POST['email_notifications']) ? 1 : 0;
     $in_app_notifications = isset($_POST['in_app_notifications']) ? 1 : 0;
     $email_frequency = $_POST['email_frequency'] ?? 'immediate';
-    $quiet_hours_start = $_POST['quiet_hours_start'] ?: null;
-    $quiet_hours_end = $_POST['quiet_hours_end'] ?: null;
+    $quiet_hours_start = $_POST['quiet_hours_start'] ?? null;
+    $quiet_hours_end = $_POST['quiet_hours_end'] ?? null;
     $max_alerts_per_hour = $_POST['max_alerts_per_hour'] ?? 10;
     
     try {
@@ -130,7 +131,7 @@ try {
 // Get notifications
 try {
     $stmt = $pdo->prepare("
-        SELECT an.*, ar.name as rule_name, ar.rule_type, ar.condition, ar.threshold_value
+        SELECT an.*, ar.name as rule_name, ar.rule_type, ar.`condition`, ar.threshold_value
         FROM alert_notifications an
         JOIN alert_rules ar ON an.rule_id = ar.id
         WHERE ar.created_by = ?

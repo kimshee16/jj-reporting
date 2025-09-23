@@ -26,115 +26,275 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    let performanceChart = null;
+    let platformChart = null;
+
     function initializeCharts() {
-        // Performance Overview Chart
-        const performanceCtx = document.getElementById('performanceChart');
-        if (performanceCtx) {
-            const performanceChart = new Chart(performanceCtx, {
-                type: 'line',
-                data: {
-                    labels: ['Jan 1', 'Jan 8', 'Jan 15', 'Jan 22', 'Jan 29'],
-                    datasets: [{
-                        label: 'Ad Spend',
-                        data: [1200, 1900, 3000, 5000, 2000],
-                        borderColor: '#1877f2',
-                        backgroundColor: 'rgba(24, 119, 242, 0.1)',
-                        tension: 0.4,
-                        fill: true
-                    }, {
-                        label: 'Conversions',
-                        data: [450, 520, 780, 1200, 850],
-                        borderColor: '#27ae60',
-                        backgroundColor: 'rgba(39, 174, 96, 0.1)',
-                        tension: 0.4,
-                        fill: false
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: {
-                                color: 'rgba(0,0,0,0.1)'
-                            }
-                        }
-                    },
-                    elements: {
-                        line: {
-                            borderWidth: 3
-                        },
-                        point: {
-                            radius: 4,
-                            hoverRadius: 6
-                        }
-                    }
-                }
-            });
-        }
-        
-        // Platform Chart
-        const platformCtx = document.getElementById('platformChart');
-        if (platformCtx) {
-            console.log('Initializing platform chart...');
-            const platformChart = new Chart(platformCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Facebook', 'Instagram', 'Audience Network'],
-                    datasets: [{
-                        data: [65, 25, 10],
-                        backgroundColor: [
-                            '#1877f2',
-                            '#e4405f',
-                            '#f39c12'
-                        ],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                        }
-                    },
-                    layout: {
-                        padding: 20
-                    }
-                }
-            });
+        // Load chart data from API
+        loadChartData();
+    }
+    
+    async function loadChartData(period = 30) {
+        try {
+            const response = await fetch(`dashboard_charts_api.php?period=${period}`);
+            const result = await response.json();
             
-            // Force chart resize after initialization
-            setTimeout(() => {
-                platformChart.resize();
-            }, 100);
-        } else {
-            console.error('Platform chart canvas not found!');
+            if (result.success) {
+                initializePerformanceChart(result.data.performance);
+                initializePlatformChart(result.data.platforms);
+                
+                // Update last updated timestamp
+                updateLastUpdatedTime();
+            } else {
+                console.error('Failed to load chart data:', result.error);
+                // Fallback to static data
+                initializePerformanceChart();
+                initializePlatformChart();
+            }
+        } catch (error) {
+            console.error('Error loading chart data:', error);
+            // Fallback to static data
+            initializePerformanceChart();
+            initializePlatformChart();
         }
     }
     
-    function loadDashboardData() {
-        // Dashboard data is now loaded directly in PHP
-        console.log('Dashboard data loaded via PHP');
+    function updateLastUpdatedTime() {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString();
         
+        // Add or update last updated indicator
+        let lastUpdatedElement = document.getElementById('lastUpdated');
+        if (!lastUpdatedElement) {
+            lastUpdatedElement = document.createElement('div');
+            lastUpdatedElement.id = 'lastUpdated';
+            lastUpdatedElement.style.cssText = `
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                font-size: 12px;
+                color: #666;
+                background: rgba(255, 255, 255, 0.8);
+                padding: 5px 10px;
+                border-radius: 4px;
+                z-index: 5;
+            `;
+            
+            const chartsSection = document.querySelector('.charts-section');
+            if (chartsSection) {
+                chartsSection.style.position = 'relative';
+                chartsSection.appendChild(lastUpdatedElement);
+            }
+        }
+        
+        lastUpdatedElement.innerHTML = `<i class="fas fa-clock"></i> Last updated: ${timeString}`;
+    }
+    
+    function initializePerformanceChart(performanceData = null) {
+        const performanceCtx = document.getElementById('performanceChart');
+        if (!performanceCtx) return;
+        
+        // Destroy existing chart if it exists
+        if (performanceChart) {
+            performanceChart.destroy();
+        }
+        
+        let labels, spendData, conversionsData;
+        
+        if (performanceData && performanceData.length > 0) {
+            // Use real data
+            labels = performanceData.map(item => new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            spendData = performanceData.map(item => parseFloat(item.daily_spend) || 0);
+            conversionsData = performanceData.map(item => parseFloat(item.daily_conversions) || 0);
+        } else {
+            // No data: show empty chart with message
+            labels = [];
+            spendData = [];
+            conversionsData = [];
+        }
+
+        performanceChart = new Chart(performanceCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Ad Spend',
+                    data: spendData,
+                    borderColor: '#1877f2',
+                    backgroundColor: 'rgba(24, 119, 242, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    yAxisID: 'y'
+                }, {
+                    label: 'Conversions',
+                    data: conversionsData,
+                    borderColor: '#27ae60',
+                    backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                    tension: 0.4,
+                    fill: false,
+                    yAxisID: 'y1'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    tooltip: {
+                        enabled: true
+                    },
+                    title: {
+                        display: labels.length === 0,
+                        text: labels.length === 0 ? 'No data available' : ''
+                    }
+                },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Ad Spend ($)'
+                        },
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Conversions'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    }
+                },
+                elements: {
+                    line: {
+                        borderWidth: 3
+                    },
+                    point: {
+                        radius: 4,
+                        hoverRadius: 6
+                    }
+                }
+            }
+        });
+    }
+    
+    function initializePlatformChart(platformData = null) {
+        const platformCtx = document.getElementById('platformChart');
+        if (!platformCtx) {
+            console.error('Platform chart canvas not found!');
+            return;
+        }
+        
+        // Destroy existing chart if it exists
+        if (platformChart) {
+            platformChart.destroy();
+        }
+        
+        let labels, data;
+        
+        if (platformData && platformData.length > 0) {
+            // Use real data
+            labels = platformData.map(item => item.platform);
+            data = platformData.map(item => parseFloat(item.platform_spend) || 0);
+        } else {
+            // Use sample data
+            const sampleData = { 'Facebook': 65, 'Instagram': 25, 'Audience Network': 10 };
+            labels = Object.keys(sampleData);
+            data = Object.values(sampleData);
+        }
+        
+        platformChart = new Chart(platformCtx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: [
+                        '#1877f2',
+                        '#e4405f',
+                        '#f39c12'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return `${label}: $${value.toLocaleString()} (${percentage}%)`;
+                            }
+                        }
+                    }
+                },
+                layout: {
+                    padding: 20
+                }
+            }
+        });
+        
+        // Force chart resize after initialization
+        setTimeout(() => {
+            platformChart.resize();
+        }, 100);
+    }
+    
+    async function loadDashboardData() {
+        // Fetch dynamic metrics for Performance Overview
+        try {
+            const response = await fetch('dashboard_api.php');
+            const result = await response.json();
+            if (result.success && result.data) {
+                updateDashboardMetrics(result.data);
+            }
+        } catch (error) {
+            console.error('Error loading dashboard metrics:', error);
+        }
         // Initialize charts with any dynamic data
-        // The PHP already handles displaying the metrics
         updateCharts();
+        // Set up auto-refresh for charts every 5 minutes
+        setInterval(() => {
+            const currentPeriod = document.getElementById('chartPeriod')?.value || 30;
+            loadChartData(currentPeriod);
+        }, 300000); // 5 minutes
     }
     
     function updateDashboardMetrics(data) {
-        // Update metric values with real data
-        if (data.summary) {
-            // Update the metric values that are displayed in PHP
-            // The PHP already handles the display, this is for any JS-only updates
-            console.log('Dashboard metrics updated with real data');
+        // Update metric values with real data from API
+        if (!data) return;
+        if (data.totalSpend !== undefined) {
+            document.getElementById('totalSpend').textContent = data.totalSpend.toLocaleString();
+        }
+        if (data.totalConversions !== undefined) {
+            document.getElementById('totalConversions').textContent = data.totalConversions.toLocaleString();
+        }
+        if (data.avgROAS !== undefined) {
+            document.getElementById('avgROAS').textContent = data.avgROAS;
+        }
+        if (data.totalImpressions !== undefined) {
+            document.getElementById('totalImpressions').textContent = data.totalImpressions.toLocaleString();
         }
     }
     
@@ -300,28 +460,70 @@ document.addEventListener('DOMContentLoaded', function() {
     
 
     
-    function refreshDashboardData() {
+    async function refreshDashboardData() {
         const refreshBtn = document.getElementById('refreshDataBtn');
         const originalText = refreshBtn.innerHTML;
+        const currentPeriod = document.getElementById('chartPeriod')?.value || 30;
         
         refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
         refreshBtn.disabled = true;
         
-        setTimeout(() => {
-            loadDashboardData();
+        try {
+            // Refresh dashboard data and charts
+            await loadDashboardData();
+            await loadChartData(currentPeriod);
+            
             refreshBtn.innerHTML = originalText;
             refreshBtn.disabled = false;
             
             // Show success message
             showNotification('Data refreshed successfully!', 'success');
-        }, 1500);
+        } catch (error) {
+            console.error('Error refreshing data:', error);
+            refreshBtn.innerHTML = originalText;
+            refreshBtn.disabled = false;
+            showNotification('Failed to refresh data', 'error');
+        }
     }
     
     function updateChartPeriod(period) {
         // Update chart data based on period
         console.log(`Updating chart for ${period} days`);
-        // Here you would typically make an API call to get new data
-        showNotification(`Chart updated for last ${period} days`, 'info');
+        
+        // Show loading indicator
+        const chartContainer = document.querySelector('.charts-section');
+        const loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'chart-loading';
+        loadingOverlay.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading chart data...';
+        loadingOverlay.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            font-size: 16px;
+            color: #666;
+        `;
+        
+        chartContainer.style.position = 'relative';
+        chartContainer.appendChild(loadingOverlay);
+        
+        // Load new chart data
+        loadChartData(period).then(() => {
+            // Remove loading indicator
+            chartContainer.removeChild(loadingOverlay);
+            showNotification(`Chart updated for last ${period} days`, 'success');
+        }).catch((error) => {
+            // Remove loading indicator
+            chartContainer.removeChild(loadingOverlay);
+            console.error('Error updating chart:', error);
+            showNotification('Failed to update chart data', 'error');
+        });
     }
     
     function performSearch(query) {

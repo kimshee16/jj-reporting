@@ -18,13 +18,36 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.append('username', username);
         formData.append('password', password);
         
-        // Make AJAX request to auth.php
+        // Make AJAX request to auth.php with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        
         fetch('auth.php', {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: controller.signal
         })
-        .then(response => response.json())
+        .then(response => {
+            clearTimeout(timeoutId);
+            console.log('Response status:', response.status);
+            console.log('Response headers:', response.headers);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            return response.text().then(text => {
+                console.log('Raw response:', text);
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    console.error('Failed to parse JSON:', e);
+                    throw new Error('Invalid JSON response from server');
+                }
+            });
+        })
         .then(data => {
+            console.log('Parsed data:', data);
             if (data.success) {
                 // Successful login
                 showSuccess('Login successful! Redirecting...');
@@ -39,8 +62,15 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         })
         .catch(error => {
+            clearTimeout(timeoutId);
             console.error('Error:', error);
-            showError('An error occurred during login. Please try again.');
+            
+            if (error.name === 'AbortError') {
+                showError('Login request timed out. Please try again.');
+            } else {
+                showError('An error occurred during login: ' + error.message);
+            }
+            
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
         });

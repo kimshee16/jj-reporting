@@ -22,3 +22,13 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
     <?php endif; ?>
 </head>
 <body class="dashboard-page">
+<script>
+    // Pass PHP session admin ID to JavaScript
+    <?php if (isset($_SESSION['admin_id'])): ?>
+        const ADMIN_ID = "<?php echo $_SESSION['admin_id']; ?>";
+    <?php elseif (isset($_SESSION['id'])): ?>
+        const ADMIN_ID = "<?php echo $_SESSION['id']; ?>";
+    <?php else: ?>
+        const ADMIN_ID = null;
+    <?php endif; ?>
+</script>

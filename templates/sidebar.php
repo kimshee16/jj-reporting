@@ -13,6 +13,7 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
     
     <div class="sidebar-content">
         <ul class="sidebar-nav">
+            
             <!-- Main Dashboard -->
             <li class="nav-item <?php echo $current_page === 'dashboard' ? 'active' : ''; ?>">
                 <a href="dashboard.php" class="nav-link">
@@ -36,7 +37,7 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
             </li>
             
             <!-- Campaign Management -->
-            <li class="nav-item <?php echo $current_page === 'campaigns' ? 'active' : ''; ?>">
+            <!-- <li class="nav-item <?php echo $current_page === 'campaigns' ? 'active' : ''; ?>">
                 <a href="campaigns.php" class="nav-link">
                     <i class="fas fa-bullhorn"></i>
                     <span>Campaigns</span>
@@ -53,11 +54,11 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
                     <i class="fas fa-ad"></i>
                     <span>Ads</span>
                 </a>
-            </li>
+            </li> -->
             
             <!-- Reports & Analytics -->
             <li class="nav-item <?php echo $current_page === 'cross_account_reports' || $current_page === 'cross_account_reports_db' ? 'active' : ''; ?>">
-                <a href="cross_account_reports_db.php" class="nav-link">
+                <a href="cross_account_reports.php" class="nav-link">
                     <i class="fas fa-chart-line"></i>
                     <span>Cross-Account Reports</span>
                 </a>

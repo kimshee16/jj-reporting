@@ -50,15 +50,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 include 'templates/header.php';
+include 'templates/sidebar.php';
 ?>
 
-<div class="quick-export-container">
-    <div class="page-header">
-        <div class="header-content">
-            <h1><i class="fas fa-file-export"></i> Quick Export</h1>
-            <p>Export data immediately in your preferred format</p>
+<div class="main-content with-sidebar">
+    <div class="quick-export-container">
+        <div class="page-header">
+            <div class="header-content">
+                <h1><i class="fas fa-file-export"></i> Quick Export</h1>
+                <p>Export data immediately in your preferred format</p>
+            </div>
         </div>
-    </div>
 
     <?php if (isset($success_message)): ?>
         <div class="alert alert-success">

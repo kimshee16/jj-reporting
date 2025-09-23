@@ -14,23 +14,37 @@ try {
     
     switch ($action) {
         case 'get_accounts':
-            // Fetch all Facebook ad accounts
-            $stmt = $pdo->query("
+            // Get admin ID from session
+            $admin_id = $_SESSION['user_id'] ?? 1;
+            
+            // Fetch all Facebook ad accounts for this admin through access_token relationship
+            $stmt = $pdo->prepare("
                 SELECT 
-                    id,
-                    access_token_id,
-                    act_name,
-                    act_id,
-                    account_expiry_date,
-                    created_at,
-                    updated_at
-                FROM facebook_ads_accounts 
-                ORDER BY created_at DESC
+                    fa.id,
+                    fa.access_token_id,
+                    fa.act_name,
+                    fa.act_id,
+                    fa.account_expiry_date,
+                    fa.created_at,
+                    fa.updated_at
+                FROM facebook_ads_accounts fa
+                INNER JOIN facebook_access_tokens fat ON fa.access_token_id = fat.id
+                WHERE fat.admin_id = :admin_id
+                ORDER BY fa.created_at DESC
             ");
+            $stmt->bindParam(':admin_id', $admin_id);
+            $stmt->execute();
             $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             // Get total count for stats
-            $countStmt = $pdo->query("SELECT COUNT(*) as total FROM facebook_ads_accounts");
+            $countStmt = $pdo->prepare("
+                SELECT COUNT(*) as total 
+                FROM facebook_ads_accounts fa
+                INNER JOIN facebook_access_tokens fat ON fa.access_token_id = fat.id
+                WHERE fat.admin_id = :admin_id
+            ");
+            $countStmt->bindParam(':admin_id', $admin_id);
+            $countStmt->execute();
             $totalCount = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
             
             // Calculate stats

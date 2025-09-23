@@ -88,17 +88,34 @@ $summary_stats = [
 
 if (!empty($page_id) && !empty($access_token)) {
     try {
-        // Get posts from the selected page
-        $posts_url = "https://graph.facebook.com/v21.0/{$page_id}/posts";
-        $fields = "id,message,created_time,permalink_url,insights{reach,impressions,likes,comments,shares,saves,post_impressions,post_impressions_paid,post_impressions_organic}";
+        // Date range for published_posts
+        $since = '';
+        $until = '';
+        $now = time();
+        switch ($date_range) {
+            case 'last_7_days':
+                $since = date('Y-m-d', $now - 7 * 24 * 60 * 60);
+                break;
+            case 'last_30_days':
+                $since = date('Y-m-d', $now - 30 * 24 * 60 * 60);
+                break;
+            case 'last_90_days':
+                $since = date('Y-m-d', $now - 90 * 24 * 60 * 60);
+                break;
+        }
+        $until = date('Y-m-d', $now);
+
+        // Build published_posts API URL
+        $posts_url = "https://graph.facebook.com/v20.0/{$page_id}/published_posts";
         $params = [
-            'fields' => $fields,
-            'limit' => 100,
+            'fields' => 'id,message,created_time,permalink_url',
+            'since' => $since,
+            'until' => $until,
+            'limit' => 50,
             'access_token' => $access_token
         ];
-        
         $posts_url .= '?' . http_build_query($params);
-        
+
         $context = stream_context_create([
             'http' => [
                 'method' => 'GET',
@@ -106,52 +123,45 @@ if (!empty($page_id) && !empty($access_token)) {
                 'timeout' => 30
             ]
         ]);
-        
+
         $response = @file_get_contents($posts_url, false, $context);
-        
+
         if ($response !== false) {
             $data = json_decode($response, true);
             if (isset($data['data']) && is_array($data['data'])) {
                 $posts = $data['data'];
-                
-                // Process posts data
+                // For each post, fetch insights
                 foreach ($posts as &$post) {
-                    $insights = $post['insights']['data'] ?? [];
+                    $insights_url = "https://graph.facebook.com/v20.0/{$post['id']}/insights?metric=post_impressions_organic,post_impressions_paid,post_engaged_users,post_reactions_by_type_total,post_saves&access_token={$access_token}";
+                    $insights_response = @file_get_contents($insights_url, false, $context);
+                    $insights_data = $insights_response ? json_decode($insights_response, true) : [];
                     $post['metrics'] = [];
-                    
-                    foreach ($insights as $insight) {
-                        $post['metrics'][$insight['name']] = $insight['values'][0]['value'] ?? 0;
+                    if (isset($insights_data['data'])) {
+                        foreach ($insights_data['data'] as $insight) {
+                            $post['metrics'][$insight['name']] = $insight['values'][0]['value'] ?? 0;
+                        }
                     }
-                    
-                    // Determine post format
-                    $post['format'] = 'text'; // Default
+                    // Determine post format (basic)
+                    $post['format'] = 'text';
                     if (strpos($post['message'] ?? '', 'video') !== false) {
                         $post['format'] = 'video';
                     } elseif (strpos($post['message'] ?? '', 'photo') !== false) {
                         $post['format'] = 'image';
                     }
-                    
                     // Calculate engagement rate
-                    $reach = $post['metrics']['reach'] ?? 0;
-                    $likes = $post['metrics']['likes'] ?? 0;
-                    $comments = $post['metrics']['comments'] ?? 0;
-                    $shares = $post['metrics']['shares'] ?? 0;
-                    $saves = $post['metrics']['saves'] ?? 0;
-                    
-                    $total_engagement = $likes + $comments + $shares + $saves;
+                    $reach = $post['metrics']['post_impressions_organic'] + $post['metrics']['post_impressions_paid'];
+                    $likes = $post['metrics']['post_reactions_by_type_total']['like'] ?? 0;
+                    $comments = $post['metrics']['post_reactions_by_type_total']['comment'] ?? 0;
+                    $saves = $post['metrics']['post_saves'] ?? 0;
+                    $total_engagement = $likes + $comments + $saves;
                     $post['engagement_rate'] = $reach > 0 ? ($total_engagement / $reach) * 100 : 0;
-                    
-                    // Organic vs Paid split
                     $post['organic_reach'] = $post['metrics']['post_impressions_organic'] ?? 0;
                     $post['paid_reach'] = $post['metrics']['post_impressions_paid'] ?? 0;
                 }
-                
                 // Apply filters
                 $posts = applyContentFilters($posts, $post_type, $format_filter, $date_range);
-                
                 // Apply sorting
                 $posts = applyContentSorting($posts, $sort_by);
-                
                 // Calculate summary stats
                 $summary_stats = calculateContentSummaryStats($posts);
             } elseif (isset($data['error'])) {

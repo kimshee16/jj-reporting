@@ -122,7 +122,16 @@ if (empty($load_report_id)) {
 // Get all connected accounts
 $accounts = [];
 try {
-    $stmt = $pdo->prepare("SELECT act_id, act_name FROM facebook_ads_accounts ORDER BY act_name");
+    // Get only accounts for the logged-in admin user
+    $stmt = $pdo->prepare("
+        SELECT faa.act_id, faa.act_name 
+        FROM facebook_ads_accounts faa 
+        LEFT JOIN facebook_access_tokens fat ON faa.access_token_id = fat.id 
+        LEFT JOIN admins a ON fat.admin_id = a.id 
+        WHERE a.id = :admin_id 
+        ORDER BY faa.act_name
+    ");
+    $stmt->bindParam(':admin_id', $_SESSION['admin_id'], PDO::PARAM_INT);
     $stmt->execute();
     $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch(PDOException $e) {

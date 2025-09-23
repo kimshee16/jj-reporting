@@ -96,7 +96,11 @@ document.addEventListener('DOMContentLoaded', function() {
         currentSearchQuery = query;
         showLoading();
 
-        fetch(`global_search_api.php?q=${encodeURIComponent(query)}&limit=5`)
+    const adminId = window.ADMIN_ID || (typeof ADMIN_ID !== 'undefined' ? ADMIN_ID : (window.sessionAdminId || ''));
+    console.log(adminId);
+    let url = `global_search_api.php?q=${encodeURIComponent(query)}&limit=5`;
+    if (adminId) url += `&admin=${encodeURIComponent(adminId)}`;
+    fetch(url)
             .then(response => response.json())
             .then(data => {
                 if (data.results && data.results.length > 0) {
@@ -171,6 +175,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return 'fas fa-ad';
             case 'adset':
                 return 'fas fa-layer-group';
+            case 'account':
+                return 'fas fa-user-circle';
             case 'content':
                 return 'fas fa-file-alt';
             default:

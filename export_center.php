@@ -137,8 +137,10 @@ $stats = [
 ];
 
 include 'templates/header.php';
+include 'templates/sidebar.php';
 ?>
 
+<div class="main-content with-sidebar">
 <div class="export-center-container">
     <div class="page-header">
         <div class="header-content">

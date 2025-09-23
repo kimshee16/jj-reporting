@@ -130,10 +130,31 @@
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     height: 400px;
     position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .chart-container canvas {
     max-height: 350px !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    height: 350px !important;
+}
+
+.chart-wrapper {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.chart-wrapper canvas {
+    max-width: 100% !important;
+    max-height: 100% !important;
 }
 
 /* Platform Chart Specific Styles */
@@ -453,6 +474,11 @@
     
     .chart-container {
         padding: 20px;
+        height: 350px;
+    }
+    
+    .chart-container canvas {
+        height: 300px !important;
     }
     
     .performance-card {

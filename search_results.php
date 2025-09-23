@@ -14,7 +14,9 @@ $total_results = 0;
 
 if (!empty($query)) {
     // Make API call to search
+    $admin_id = $_SESSION['admin_id'] ?? $_SESSION['id'] ?? '';
     $api_url = "global_search_api.php?q=" . urlencode($query) . "&type=" . urlencode($type);
+    if ($admin_id) $api_url .= "&admin=" . urlencode($admin_id);
     $response = @file_get_contents($api_url);
     
     if ($response !== false) {
@@ -59,6 +61,7 @@ include 'templates/header.php';
                            autofocus>
                     <select name="type" class="search-type-select">
                         <option value="all" <?php echo $type === 'all' ? 'selected' : ''; ?>>All</option>
+                        <option value="accounts" <?php echo $type === 'accounts' ? 'selected' : ''; ?>>Accounts</option>
                         <option value="campaigns" <?php echo $type === 'campaigns' ? 'selected' : ''; ?>>Campaigns</option>
                         <option value="ads" <?php echo $type === 'ads' ? 'selected' : ''; ?>>Ads</option>
                         <option value="adsets" <?php echo $type === 'adsets' ? 'selected' : ''; ?>>Ad Sets</option>
@@ -102,6 +105,9 @@ include 'templates/header.php';
                                 <?php
                                 $icon_class = 'fas fa-';
                                 switch ($result['type']) {
+                                    case 'account':
+                                        $icon_class .= 'user-circle';
+                                        break;
                                     case 'campaign':
                                         $icon_class .= 'bullhorn';
                                         break;
@@ -288,6 +294,11 @@ include 'templates/header.php';
     justify-content: center;
     margin-right: 16px;
     flex-shrink: 0;
+}
+
+.result-item[data-type="account"] .result-icon {
+    background: #17a2b8;
+    color: white;
 }
 
 .result-item[data-type="campaign"] .result-icon {
