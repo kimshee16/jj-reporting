@@ -1,3 +1,11 @@
+/* Scrollable search suggestions dropdown */
+#searchSuggestions {
+    max-height: 350px;
+    overflow-y: auto;
+    min-width: 320px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+    border-radius: 10px;
+}
 /* Reset and Base Styles */
 * {
     margin: 0;

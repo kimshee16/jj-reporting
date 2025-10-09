@@ -5,14 +5,11 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     exit();
 }
 
-// Database connection
-$host = 'localhost';
-$dbname = 'report-database';
-$username = 'root';
-$password = '';
+require_once 'config.php';
 
+// Database connection
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch(PDOException $e) {
     die("Connection failed: " . $e->getMessage());
@@ -134,6 +131,11 @@ try {
     $stmt->bindParam(':admin_id', $_SESSION['admin_id'], PDO::PARAM_INT);
     $stmt->execute();
     $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Debug: log accounts when debug flag is set
+    if (isset($_GET['debug']) && $_GET['debug']) {
+        error_log("[debug] fetched accounts: " . json_encode($accounts));
+        echo "<pre>[debug] fetched accounts: " . htmlspecialchars(json_encode($accounts, JSON_PRETTY_PRINT)) . "</pre>";
+    }
 } catch(PDOException $e) {
     error_log("Error fetching accounts: " . $e->getMessage());
 }
@@ -141,112 +143,107 @@ try {
 // Fetch cross-account data
 $cross_account_data = [];
 $error_message = '';
-
-if (!empty($access_token) && !empty($accounts)) {
-    $cross_account_data = fetchCrossAccountData($accounts, $access_token, $date_preset, $custom_view, $platform_filter, $device_filter, $country_filter, $age_filter, $placement_filter, $format_filter, $objective_filter, $ctr_threshold, $roas_threshold, $sort_by);
-} else {
-    if (empty($access_token)) {
-        $error_message = 'No access token found. Please update your access token in the Access Tokens page.';
-    } elseif (empty($accounts)) {
-        $error_message = 'No ad accounts found. Please connect some ad accounts first.';
+if (!empty($accounts)) {
+    $cross_account_data = fetchCrossAccountData($accounts, $pdo, $date_preset, $custom_view, $platform_filter, $device_filter, $country_filter, $age_filter, $placement_filter, $format_filter, $objective_filter, $ctr_threshold, $roas_threshold, $sort_by);
+    if (isset($_GET['debug']) && $_GET['debug']) {
+        error_log("[debug] cross_account_data count: " . count($cross_account_data));
+        echo "<pre>[debug] cross_account_data count: " . count($cross_account_data) . "</pre>";
     }
+    if (empty($cross_account_data)) {
+        $error_message = 'No ads found in the database for your connected accounts.';
+    }
+} else {
+    $error_message = 'No ad accounts found. Please connect some ad accounts first.';
 }
 
-function fetchCrossAccountData($accounts, $access_token, $date_preset, $custom_view, $platform_filter, $device_filter, $country_filter, $age_filter, $placement_filter, $format_filter, $objective_filter, $ctr_threshold, $roas_threshold, $sort_by) {
+function fetchCrossAccountData($accounts, $pdo, $date_preset, $custom_view, $platform_filter, $device_filter, $country_filter, $age_filter, $placement_filter, $format_filter, $objective_filter, $ctr_threshold, $roas_threshold, $sort_by) {
     $all_ads = [];
-    
     foreach ($accounts as $account) {
         $account_id = $account['act_id'];
         $account_name = $account['act_name'];
-        
-        // Fetch campaigns first
-        $campaigns = fetchCampaigns($account_id, $access_token, $date_preset);
-        
-        // For each campaign, fetch ads with detailed targeting info
-        foreach ($campaigns as $campaign) {
-            $ads = fetchAdsForCampaign($account_id, $campaign['id'], $access_token, $date_preset);
-            
-            foreach ($ads as $ad) {
-                // Add account and campaign information to each ad
-                $ad['account_id'] = $account_id;
-                $ad['account_name'] = $account_name;
-                $ad['campaign_id'] = $campaign['id'];
-                $ad['campaign_name'] = $campaign['name'];
-                $ad['campaign_objective'] = $campaign['objective'];
-                $ad['campaign_status'] = $campaign['status'];
-                $all_ads[] = $ad;
-            }
+        // Fetch all ads for this account
+        $ads = fetchAllAdsForAccountFromDB($pdo, $account_id);
+        if (isset($_GET['debug']) && $_GET['debug']) {
+            error_log("[debug] account_id={$account_id} account_name={$account_name} ads_count=" . count($ads));
+            echo "<pre>[debug] account_id={$account_id} account_name={$account_name} ads_count=" . count($ads) . "</pre>";
+        }
+        foreach ($ads as $ad) {
+            // Try to get campaign info if available
+            $campaign = fetchCampaignByIdFromDB($pdo, $ad['campaign_id']);
+            $ad['account_id'] = $account_id;
+            $ad['account_name'] = $account_name;
+            $ad['campaign_id'] = $ad['campaign_id'];
+            $ad['campaign_name'] = $campaign['name'] ?? 'Unknown';
+            $ad['campaign_objective'] = $campaign['objective'] ?? 'Unknown';
+            $ad['campaign_status'] = $campaign['status'] ?? 'Unknown';
+            $all_ads[] = $ad;
         }
     }
-    
     // Apply custom view filters
     $all_ads = applyCustomViewFilters($all_ads, $custom_view);
-    
     // Apply advanced filters
     $all_ads = applyAdvancedFilters($all_ads, $platform_filter, $device_filter, $country_filter, $age_filter, $placement_filter, $format_filter, $objective_filter, $ctr_threshold, $roas_threshold);
-    
     // Apply sorting
     $all_ads = applyCrossAccountSorting($all_ads, $sort_by);
-    
     return $all_ads;
 }
 
-function fetchCampaigns($account_id, $access_token, $date_preset) {
-    $api_url = "https://graph.facebook.com/v21.0/{$account_id}/campaigns";
-    $fields = "id,name,objective,status";
-    $params = [
-        'fields' => $fields,
-        'date_preset' => $date_preset,
-        'access_token' => $access_token
-    ];
-    
-    $api_url .= '?' . http_build_query($params);
-    
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => 'User-Agent: JJ-Reporting-Dashboard/1.0',
-            'timeout' => 30
-        ]
-    ]);
-    
-    $response = @file_get_contents($api_url, false, $context);
-    
-    if ($response !== false) {
-        $data = json_decode($response, true);
-        return isset($data['data']) ? $data['data'] : [];
+function fetchAllAdsForAccountFromDB($pdo, $account_id) {
+    // Fix collation issue by forcing collation on both sides of the join and the WHERE clause
+    $sql = "SELECT *, faac.name as campaign_name1, faac.objective as campaign_objective1, faaa.roas as ad_roas, faaa.impressions as ad_impressions, faaa.cpc as ad_cpc, faaa.ctr as ad_ctr, faaa.name as ad_name, faad.age_min as ad_target_age_min, faad.age_max as ad_target_age_max, faad.gender as ad_target_age_gender FROM facebook_ads_accounts_ads faaa LEFT JOIN facebook_ads_accounts_campaigns faac ON faac.campaign_id COLLATE utf8mb4_unicode_ci = faaa.campaign_id COLLATE utf8mb4_unicode_ci LEFT JOIN facebook_ads_accounts_adsets faad ON faac.campaign_id COLLATE utf8mb4_unicode_ci = faad.campaign_id COLLATE utf8mb4_unicode_ci WHERE faaa.account_id COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci";
+    if (isset($_GET['debug']) && $_GET['debug']) {
+        error_log("[debug] fetchAllAdsForAccountFromDB SQL: " . $sql . " params: [" . $account_id . "]");
+        echo "<pre>[debug] fetchAllAdsForAccountFromDB SQL: " . htmlspecialchars($sql) . "\nparams: [" . htmlspecialchars($account_id) . "]</pre>";
     }
-    
-    return [];
+    $stmt = $pdo->prepare($sql);
+    // Also run a quick count to see if any ads exist for this account
+    if (isset($_GET['debug']) && $_GET['debug']) {
+        try {
+            $countStmt = $pdo->prepare("SELECT COUNT(*) as cnt FROM facebook_ads_accounts_ads WHERE account_id = ?");
+            $countStmt->execute([$account_id]);
+            $cntRow = $countStmt->fetch(PDO::FETCH_ASSOC);
+            $cnt = $cntRow['cnt'] ?? 0;
+            error_log("[debug] quick ad count for account {$account_id}: {$cnt}");
+            echo "<pre>[debug] quick ad count for account {$account_id}: " . htmlspecialchars($cnt) . "</pre>";
+        } catch (Exception $e) {
+            error_log("[debug] error counting ads for account {$account_id}: " . $e->getMessage());
+        }
+    }
+    $stmt->execute([$account_id]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $rows;
 }
 
-function fetchAdsForCampaign($account_id, $campaign_id, $access_token, $date_preset) {
-    $api_url = "https://graph.facebook.com/v21.0/{$campaign_id}/ads";
-    $fields = "id,name,status,creative{title,body,image_url,video_id,object_type},targeting{geo_locations,age_min,age_max,device_platforms,placements},insights{spend,actions,purchase_roas,ctr,cpc,cpm,impressions,clicks}";
-    $params = [
-        'fields' => $fields,
-        'date_preset' => $date_preset,
-        'access_token' => $access_token
-    ];
-    
-    $api_url .= '?' . http_build_query($params);
-    
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => 'User-Agent: JJ-Reporting-Dashboard/1.0',
-            'timeout' => 30
-        ]
-    ]);
-    
-    $response = @file_get_contents($api_url, false, $context);
-    
-    if ($response !== false) {
-        $data = json_decode($response, true);
-        return isset($data['data']) ? $data['data'] : [];
+function fetchCampaignByIdFromDB($pdo, $campaign_id) {
+    // The campaigns table stores the external campaign id in `campaign_id` column
+    $stmt = $pdo->prepare("SELECT campaign_id, name, objective, status FROM facebook_ads_accounts_campaigns WHERE campaign_id = ? LIMIT 1");
+    $stmt->execute([$campaign_id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+        // Normalize to expected keys (campaign id -> id)
+        return [
+            'id' => $row['campaign_id'],
+            'name' => $row['name'] ?? null,
+            'objective' => $row['objective'] ?? null,
+            'status' => $row['status'] ?? null
+        ];
     }
-    
-    return [];
+    return null;
+}
+
+
+function fetchCampaignsFromDB($pdo, $account_id, $date_preset) {
+    // For now, ignore $date_preset, or you can add logic to filter by created_time if needed
+    $stmt = $pdo->prepare("SELECT id, name, objective, status FROM facebook_ads_accounts_campaigns WHERE account_id = ?");
+    $stmt->execute([$account_id]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+
+function fetchAdsForCampaignFromDB($pdo, $account_id, $campaign_id) {
+    $stmt = $pdo->prepare("SELECT * FROM facebook_ads_accounts_ads WHERE account_id = ? AND campaign_id = ?");
+    $stmt->execute([$account_id, $campaign_id]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 function applyCustomViewFilters($ads, $custom_view) {
@@ -255,38 +252,53 @@ function applyCustomViewFilters($ads, $custom_view) {
     }
     
     return array_filter($ads, function($ad) use ($custom_view) {
-        $insights = $ad['insights']['data'][0] ?? [];
-        $spend = floatval($insights['spend'] ?? 0);
-        $roas = floatval($insights['purchase_roas'] ?? 0);
-        $ctr = floatval($insights['ctr'] ?? 0);
+        // Support both API response style (nested 'insights') and flat DB columns
+    $insights = $ad['insights']['data'][0] ?? [];
+    // Spend may be stored as insights->spend or as a top-level column 'spend'
+    $spend = floatval($insights['spend'] ?? $ad['spend'] ?? $ad['ad_spend'] ?? 0);
+    // ROAS may be aliased as ad_roas in the SELECT; check that first, then purchase_roas or roas
+    $roas = floatval($insights['purchase_roas'] ?? $ad['purchase_roas'] ?? $ad['ad_roas'] ?? $ad['roas'] ?? 0);
+    // CTR may be aliased as ad_ctr
+    $ctr = floatval($insights['ctr'] ?? $ad['ad_ctr'] ?? $ad['ctr'] ?? 0);
+
+        // Creative / format detection
         $creative = $ad['creative'] ?? [];
-        $object_type = $creative['object_type'] ?? '';
+        $object_type = $creative['object_type'] ?? ($ad['creative_type'] ?? strtoupper($ad['format'] ?? ''));
+
+        // Targeting and geo fallbacks
         $targeting = $ad['targeting'] ?? [];
         $geo_locations = $targeting['geo_locations'] ?? [];
         $countries = $geo_locations['countries'] ?? [];
-        
+        // If country stored as single value in DB, normalize to array
+        if (empty($countries) && !empty($ad['country'])) {
+            $countries = is_array($ad['country']) ? $ad['country'] : [$ad['country']];
+        }
+
+        // Device platforms
+        $device_platforms = $targeting['device_platforms'] ?? ($ad['device_platforms'] ?? []);
+
         switch ($custom_view) {
             case 'top_performing_quarter':
                 // Top performing campaigns this quarter (ROAS > 2x and spend > $100)
                 return $roas > 2.0 && $spend > 100;
-                
+
             case 'pakistan_roas':
                 // All ads targeting Pakistan, sorted by ROAS
-                return in_array('PK', $countries) && $roas > 0;
-                
+                return (in_array('PK', $countries) || in_array('Pakistan', $countries)) && $roas > 0;
+
             case 'video_ctr_2':
                 // Video ads with CTR > 2%
-                return $object_type === 'VIDEO' && $ctr > 2.0;
-                
+                return (strtoupper($object_type) === 'VIDEO' || stripos($ad['format'] ?? '', 'video') !== false) && $ctr > 2.0;
+
             case 'high_spend_low_roas':
-                // High spend, low ROAS campaigns (need optimization)
-                return $spend > 500 && $roas < 1.5;
-                
+            // High spend, low ROAS campaigns (need optimization)
+            return $spend > 50 && $roas < 1.5;
+
             case 'mobile_optimized':
                 // Mobile-optimized ads with good performance
-                $device_platforms = $targeting['device_platforms'] ?? [];
-                return in_array('mobile', $device_platforms) && $ctr > 1.5;
-                
+                $device_platforms = array_map('strtolower', (array) $device_platforms);
+                return (in_array('mobile', $device_platforms) || stripos($ad['placement'] ?? '', 'mobile') !== false) && $ctr > 1.5;
+
             default:
                 return true;
         }
@@ -295,45 +307,34 @@ function applyCustomViewFilters($ads, $custom_view) {
 
 function applyAdvancedFilters($ads, $platform_filter, $device_filter, $country_filter, $age_filter, $placement_filter, $format_filter, $objective_filter, $ctr_threshold, $roas_threshold) {
     return array_filter($ads, function($ad) use ($platform_filter, $device_filter, $country_filter, $age_filter, $placement_filter, $format_filter, $objective_filter, $ctr_threshold, $roas_threshold) {
-        $insights = $ad['insights']['data'][0] ?? [];
-        $ctr = floatval($insights['ctr'] ?? 0);
-        $roas = floatval($insights['purchase_roas'] ?? 0);
-        $creative = $ad['creative'] ?? [];
-        $targeting = $ad['targeting'] ?? [];
-        
-        // Platform filter (Facebook/Instagram)
-        if ($platform_filter !== 'all') {
-            $placements = $targeting['placements'] ?? [];
-            if ($platform_filter === 'facebook' && !in_array('facebook', $placements)) {
-                return false;
-            }
-            if ($platform_filter === 'instagram' && !in_array('instagram', $placements)) {
-                return false;
-            }
+        // Use direct DB fields for filtering
+    // Prefer aliased / stored fields (ad_ctr, ad_roas), then insights, then generic fields
+    $insights = $ad['insights']['data'][0] ?? [];
+    $ctr = floatval($ad['ad_ctr'] ?? $insights['ctr'] ?? $ad['ctr'] ?? 0);
+    $roas = floatval($ad['ad_roas'] ?? $insights['purchase_roas'] ?? $ad['roas'] ?? 0);
+        $format = $ad['format'] ?? '';
+        $objective = $ad['campaign_objective'] ?? '';
+        $platform = strtolower($ad['platform'] ?? '');
+        $device = strtolower($ad['device'] ?? '');
+        $country = $ad['country'] ?? '';
+        $age_min = isset($ad['age_min']) ? intval($ad['age_min']) : 0;
+        $age_max = isset($ad['age_max']) ? intval($ad['age_max']) : 100;
+        $placement = strtolower($ad['placement'] ?? '');
+
+        // Platform filter
+        if ($platform_filter !== 'all' && $platform !== $platform_filter) {
+            return false;
         }
-        
         // Device type filter
-        if ($device_filter !== 'all') {
-            $device_platforms = $targeting['device_platforms'] ?? [];
-            if (!in_array($device_filter, $device_platforms)) {
-                return false;
-            }
+        if ($device_filter !== 'all' && $device !== $device_filter) {
+            return false;
         }
-        
         // Country filter
-        if ($country_filter !== 'all') {
-            $geo_locations = $targeting['geo_locations'] ?? [];
-            $countries = $geo_locations['countries'] ?? [];
-            if (!in_array($country_filter, $countries)) {
-                return false;
-            }
+        if ($country_filter !== 'all' && $country !== $country_filter) {
+            return false;
         }
-        
         // Age group filter
         if ($age_filter !== 'all') {
-            $age_min = $targeting['age_min'] ?? 0;
-            $age_max = $targeting['age_max'] ?? 100;
-            
             switch ($age_filter) {
                 case '18-24':
                     if ($age_min > 24 || $age_max < 18) return false;
@@ -352,38 +353,26 @@ function applyAdvancedFilters($ads, $platform_filter, $device_filter, $country_f
                     break;
             }
         }
-        
         // Placement filter
-        if ($placement_filter !== 'all') {
-            $placements = $targeting['placements'] ?? [];
-            if (!in_array($placement_filter, $placements)) {
-                return false;
-            }
-        }
-        
-        // Ad format filter
-        if ($format_filter !== 'all') {
-            $object_type = $creative['object_type'] ?? '';
-            if ($object_type !== $format_filter) {
-                return false;
-            }
-        }
-        
-        // Objective filter
-        if ($objective_filter !== 'all' && $ad['campaign_objective'] !== $objective_filter) {
+        if ($placement_filter !== 'all' && $placement !== $placement_filter) {
             return false;
         }
-        
+        // Ad format filter
+        if ($format_filter !== 'all' && $format !== $format_filter) {
+            return false;
+        }
+        // Objective filter
+        if ($objective_filter !== 'all' && $objective !== $objective_filter) {
+            return false;
+        }
         // CTR threshold filter
         if (!empty($ctr_threshold) && $ctr < floatval($ctr_threshold)) {
             return false;
         }
-        
         // ROAS threshold filter
         if (!empty($roas_threshold) && $roas < floatval($roas_threshold)) {
             return false;
         }
-        
         return true;
     });
 }
@@ -664,28 +653,29 @@ include 'templates/header.php';
                 <div class="custom-views-section">
                     <div class="views-card">
                         <h3>Custom Views</h3>
+                        <?php $debug_param = (isset($_GET['debug']) && $_GET['debug']) ? '&debug=1' : ''; ?>
                         <div class="views-grid">
                             <a href="?custom_view=all" class="view-card <?php echo $custom_view === 'all' ? 'active' : ''; ?>">
                                 <i class="fas fa-list"></i>
                                 <span>All Ads</span>
                             </a>
-                            <a href="?custom_view=top_performing_quarter" class="view-card <?php echo $custom_view === 'top_performing_quarter' ? 'active' : ''; ?>">
+                            <a href="?custom_view=top_performing_quarter<?php echo $debug_param; ?>" class="view-card <?php echo $custom_view === 'top_performing_quarter' ? 'active' : ''; ?>">
                                 <i class="fas fa-trophy"></i>
                                 <span>Top Performing This Quarter</span>
                             </a>
-                            <a href="?custom_view=pakistan_roas" class="view-card <?php echo $custom_view === 'pakistan_roas' ? 'active' : ''; ?>">
+                            <!-- <a href="?custom_view=pakistan_roas<?php echo $debug_param; ?>" class="view-card <?php echo $custom_view === 'pakistan_roas' ? 'active' : ''; ?>">
                                 <i class="fas fa-flag"></i>
                                 <span>Pakistan Ads by ROAS</span>
-                            </a>
-                            <a href="?custom_view=video_ctr_2" class="view-card <?php echo $custom_view === 'video_ctr_2' ? 'active' : ''; ?>">
+                            </a> -->
+                            <a href="?custom_view=video_ctr_2<?php echo $debug_param; ?>" class="view-card <?php echo $custom_view === 'video_ctr_2' ? 'active' : ''; ?>">
                                 <i class="fas fa-video"></i>
                                 <span>Video Ads CTR > 2%</span>
                             </a>
-                            <a href="?custom_view=high_spend_low_roas" class="view-card <?php echo $custom_view === 'high_spend_low_roas' ? 'active' : ''; ?>">
+                            <a href="?custom_view=high_spend_low_roas<?php echo $debug_param; ?>" class="view-card <?php echo $custom_view === 'high_spend_low_roas' ? 'active' : ''; ?>">
                                 <i class="fas fa-exclamation-triangle"></i>
                                 <span>High Spend, Low ROAS</span>
                             </a>
-                            <a href="?custom_view=mobile_optimized" class="view-card <?php echo $custom_view === 'mobile_optimized' ? 'active' : ''; ?>">
+                            <a href="?custom_view=mobile_optimized<?php echo $debug_param; ?>" class="view-card <?php echo $custom_view === 'mobile_optimized' ? 'active' : ''; ?>">
                                 <i class="fas fa-mobile-alt"></i>
                                 <span>Mobile Optimized</span>
                             </a>
@@ -856,7 +846,7 @@ include 'templates/header.php';
                                         <th>Campaign</th>
                                         <th>Ad Name</th>
                                         <th>Format</th>
-                                        <th>Platform</th>
+                                        <!-- <th>Platform</th> -->
                                         <th>Targeting</th>
                                         <th>Status</th>
                                         <th>Spend</th>
@@ -870,44 +860,54 @@ include 'templates/header.php';
                                 </thead>
                                 <tbody>
                                     <?php foreach ($cross_account_data as $ad): ?>
-                                        <?php 
-                                        $insights = $ad['insights']['data'][0] ?? [];
+                                        <?php
+                                        $insights = $ad ?? [];
                                         $spend = $insights['spend'] ?? 0;
-                                        $roas = $insights['purchase_roas'] ?? 0;
-                                        $ctr = $insights['ctr'] ?? 0;
-                                        $cpc = $insights['cpc'] ?? 0;
+                                        $roas = $insights['ad_roas'] ?? 0;
+                                        $ctr = $insights['ad_ctr'] ?? 0;
+                                        $cpc = $insights['ad_cpc'] ?? 0;
                                         $cpm = $insights['cpm'] ?? 0;
                                         $impressions = $insights['impressions'] ?? 0;
                                         $clicks = $insights['clicks'] ?? 0;
                                         
                                         $creative = $ad['creative'] ?? [];
-                                        $targeting = $ad['targeting'] ?? [];
+                                        $targeting1 = "Age: ".$ad['ad_target_age_min']."-".$ad['ad_target_age_max']." | Gender: ".$ad['ad_target_age_gender'];
                                         
                                         // Safe access to ad data
-                                        $ad_name = $ad['name'] ?? 'Unknown Ad';
-                                        $ad_status = $ad['status'] ?? 'Unknown';
+                                        $ad_name = $ad['ad_name'] ?? 'N/A';
+                                        $ad_status = $ad['status'] ?? 'N/A';
                                         $ad_id = $ad['id'] ?? '';
-                                        $account_name = $ad['account_name'] ?? 'Unknown Account';
+                                        $account_name = $ad['account_name'] ?? 'N/A';
                                         $account_id = $ad['account_id'] ?? '';
-                                        $campaign_name = $ad['campaign_name'] ?? 'Unknown Campaign';
+                                        $campaign_name = $ad['campaign_name1'] ?? 'N/A';
                                         $campaign_id = $ad['campaign_id'] ?? '';
-                                        $campaign_objective = $ad['campaign_objective'] ?? 'Unknown';
-                                        
+                                        $campaign_objective = $ad['campaign_objective1'] ?? 'N/A';
+                                        $impressions1 = $ad['ad_impressions'] ?? 0;
+
                                         // Extract targeting info
-                                        $object_type = $creative['object_type'] ?? 'Unknown';
+                                        $object_type = $ad['format'] ?? 'N/A';
                                         $placements = $targeting['placements'] ?? [];
                                         $device_platforms = $targeting['device_platforms'] ?? [];
                                         $geo_locations = $targeting['geo_locations'] ?? [];
                                         $countries = $geo_locations['countries'] ?? [];
                                         $age_min = $targeting['age_min'] ?? 0;
                                         $age_max = $targeting['age_max'] ?? 0;
-                                        
+
                                         // Determine platform
-                                        $platform = 'Unknown';
-                                        if (in_array('facebook', $placements)) $platform = 'Facebook';
-                                        if (in_array('instagram', $placements)) $platform = 'Instagram';
-                                        if (in_array('facebook', $placements) && in_array('instagram', $placements)) $platform = 'Both';
-                                        
+                                        if (!empty($placements)) {
+                                            if (in_array('facebook', $placements) && in_array('instagram', $placements)) {
+                                                $platform = 'Both';
+                                            } elseif (in_array('facebook', $placements)) {
+                                                $platform = 'Facebook';
+                                            } elseif (in_array('instagram', $placements)) {
+                                                $platform = 'Instagram';
+                                            } else {
+                                                $platform = 'N/A';
+                                            }
+                                        } else {
+                                            $platform = 'N/A';
+                                        }
+
                                         // Create targeting summary
                                         $targeting_summary = [];
                                         if (!empty($countries)) {
@@ -949,14 +949,14 @@ include 'templates/header.php';
                                                     <?php echo htmlspecialchars($object_type); ?>
                                                 </span>
                                             </td>
-                                            <td>
+                                            <!-- <td>
                                                 <span class="platform-badge">
                                                     <?php echo htmlspecialchars($platform); ?>
                                                 </span>
-                                            </td>
+                                            </td> -->
                                             <td>
-                                                <div class="targeting-info" title="<?php echo htmlspecialchars($targeting_text); ?>">
-                                                    <?php echo htmlspecialchars($targeting_text); ?>
+                                                <div class="targeting-info" title="<?php echo htmlspecialchars($targeting1); ?>">
+                                                    <?php echo htmlspecialchars($targeting1); ?>
                                                 </div>
                                             </td>
                                             <td>
@@ -977,7 +977,7 @@ include 'templates/header.php';
                                                 <?php echo $cpc > 0 ? formatCurrency($cpc) : 'N/A'; ?>
                                             </td>
                                             <td class="impressions-cell">
-                                                <?php echo number_format($impressions); ?>
+                                                <?php echo number_format($impressions1); ?>
                                             </td>
                                             <td class="clicks-cell">
                                                 <?php echo number_format($clicks); ?>

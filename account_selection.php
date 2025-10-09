@@ -39,6 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['selected_accounts']))
                 (access_token_id, act_name, act_id, account_expiry_date, created_at, updated_at) 
                 VALUES (?, ?, ?, ?, NOW(), NOW())
                 ON DUPLICATE KEY UPDATE 
+    
+        // Ensure sidebar is included for consistent menu
+        include 'templates/sidebar.php';
                 act_name = VALUES(act_name),
                 account_expiry_date = VALUES(account_expiry_date),
                 updated_at = NOW()
@@ -82,8 +85,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['selected_accounts']))
         }
     }
 }
+// Include header template
+include 'templates/header.php';
 ?>
-<!DOCTYPE html>
+
+    <!-- Include sidebar template -->
+    <?php include 'templates/sidebar.php'; ?>
+    
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -94,7 +103,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['selected_accounts']))
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="dashboard-page">
-    <!-- Sidebar Navigation -->
     <nav class="sidebar">
         <div class="sidebar-header">
             <div class="logo">
@@ -160,7 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['selected_accounts']))
                 <span>Logout</span>
             </a>
         </div>
-    </nav>
+    </nav> -->
 
     <!-- Main Content -->
     <main class="main-content">

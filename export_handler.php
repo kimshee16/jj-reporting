@@ -4,6 +4,11 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Start output buffering to prevent stray output (warnings/notices) from corrupting JSON responses
+if (!headers_sent()) {
+    ob_start();
+}
+
 require_once 'config.php';
 
 // Database connection
@@ -97,14 +102,14 @@ class ExportHandler {
                         c.name,
                         c.status,
                         c.total_spend as spend,
-                        c.impressions,
-                        c.clicks,
+                        -- c.impressions,
+                        -- c.clicks,
                         c.ctr,
                         c.cpc,
-                        c.cpa,
+                        -- c.cpa,
                         c.roas,
                         c.objective,
-                        c.created_time,
+                        c.created_at,
                         a.act_name as account_name
                     FROM facebook_ads_accounts_campaigns c
                     LEFT JOIN facebook_ads_accounts a ON c.account_id = a.act_id
@@ -113,8 +118,8 @@ class ExportHandler {
             $params = [];
             
             // Apply date filter
-            if (isset($filters['date_range'])) {
-                $date_condition = $this->getDateCondition($filters['date_range']);
+            if (isset($filters['date_range']) && $filters['date_range'] !== 'all') {
+                $date_condition = $this->getDateCondition($filters['date_range'], 'c');
                 if ($date_condition) {
                     $sql .= " AND " . $date_condition;
                 }
@@ -136,7 +141,62 @@ class ExportHandler {
             
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // If no rows and an account filter is provided, try fetching from the Graph API as a fallback
+            if (empty($rows) && isset($filters['account_filter']) && !empty($filters['account_filter'])) {
+                try {
+                    // Get admin access token (if available)
+                    $accStmt = $this->pdo->prepare("SELECT access_token FROM facebook_access_tokens WHERE admin_id = ? LIMIT 1");
+                    $accStmt->execute([$this->admin_id]);
+                    $tokenRow = $accStmt->fetch(PDO::FETCH_ASSOC);
+                    $accessToken = $tokenRow['access_token'] ?? '';
+
+                    if (!empty($accessToken)) {
+                        $accountId = $filters['account_filter'];
+                        $fields = "id,name,objective,status,created_time,insights{spend,actions,purchase_roas,ctr,cpc,cpm}";
+                        $apiUrl = "https://graph.facebook.com/v21.0/" . urlencode($accountId) . "/campaigns?fields=" . urlencode($fields) . "&date_preset=this_month&access_token=" . urlencode($accessToken);
+
+                        $context = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 30]]);
+                        $resp = @file_get_contents($apiUrl, false, $context);
+                        if ($resp !== false) {
+                            $data = json_decode($resp, true);
+                            if (isset($data['data']) && is_array($data['data'])) {
+                                $rows = [];
+                                // Get account name from local accounts table if possible
+                                $accName = null;
+                                try {
+                                    $aStmt = $this->pdo->prepare("SELECT act_name FROM facebook_ads_accounts WHERE act_id = ? LIMIT 1");
+                                    $aStmt->execute([$accountId]);
+                                    $aRow = $aStmt->fetch(PDO::FETCH_ASSOC);
+                                    $accName = $aRow['act_name'] ?? null;
+                                } catch (PDOException $e) {
+                                    // ignore
+                                }
+
+                                foreach ($data['data'] as $camp) {
+                                    $ins = $camp['insights']['data'][0] ?? [];
+                                    $rows[] = [
+                                        'name' => $camp['name'] ?? '',
+                                        'status' => $camp['status'] ?? '',
+                                        'spend' => $ins['spend'] ?? 0,
+                                        'ctr' => $ins['ctr'] ?? 0,
+                                        'cpc' => $ins['cpc'] ?? 0,
+                                        'roas' => $ins['purchase_roas'] ?? 0,
+                                        'objective' => $camp['objective'] ?? '',
+                                        'created_at' => $camp['created_time'] ?? null,
+                                        'account_name' => $accName ?? $accountId
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception $e) {
+                    error_log('Fallback API fetch for campaigns failed: ' . $e->getMessage());
+                }
+            }
+
+            return $rows;
             
         } catch (PDOException $e) {
             error_log("Error fetching campaigns: " . $e->getMessage());
@@ -157,19 +217,19 @@ class ExportHandler {
                         adset.interests,
                         adset.placement,
                         adset.impressions,
-                        adset.spend,
+                        camp.total_spend AS spend,
                         adset.results,
                         camp.name as campaign_name,
                         a.act_name as account_name
                     FROM facebook_ads_accounts_adsets adset
                     LEFT JOIN facebook_ads_accounts_campaigns camp ON adset.campaign_id = camp.id
-                    LEFT JOIN facebook_ads_accounts a ON adset.account_id = a.act_id
+                    LEFT JOIN facebook_ads_accounts a ON adset.account_id COLLATE utf8mb4_unicode_ci = a.act_id COLLATE utf8mb4_unicode_ci 
                     WHERE 1=1";
             
             $params = [];
             
             // Apply date filter
-            if (isset($filters['date_range'])) {
+            if (isset($filters['date_range']) && $filters['date_range'] !== 'all') {
                 $date_condition = $this->getDateCondition($filters['date_range'], 'adset');
                 if ($date_condition) {
                     $sql .= " AND " . $date_condition;
@@ -182,7 +242,7 @@ class ExportHandler {
                 $params[':status'] = strtoupper($filters['status_filter']);
             }
             
-            $sql .= " ORDER BY adset.spend DESC";
+            $sql .= " ORDER BY camp.total_spend DESC";
             
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($params);
@@ -225,13 +285,13 @@ class ExportHandler {
                     FROM facebook_ads_accounts_ads a
                     LEFT JOIN facebook_ads_accounts_adsets adset ON a.adset_id = adset.id
                     LEFT JOIN facebook_ads_accounts_campaigns camp ON a.campaign_id = camp.id
-                    LEFT JOIN facebook_ads_accounts acc ON a.account_id = acc.act_id
+                    LEFT JOIN facebook_ads_accounts acc ON a.account_id COLLATE utf8mb4_unicode_ci = acc.act_id COLLATE utf8mb4_unicode_ci
                     WHERE 1=1";
             
             $params = [];
             
             // Apply date filter
-            if (isset($filters['date_range'])) {
+            if (isset($filters['date_range']) && $filters['date_range'] !== 'all') {
                 $date_condition = $this->getDateCondition($filters['date_range'], 'a');
                 if ($date_condition) {
                     $sql .= " AND " . $date_condition;
@@ -285,8 +345,8 @@ class ExportHandler {
             $params = [];
             
             // Apply date filter
-            if (isset($filters['date_range'])) {
-                $date_condition = $this->getDateCondition($filters['date_range'], 'a');
+            if (isset($filters['date_range']) && $filters['date_range'] !== 'all') {
+                $date_condition = $this->getDateCondition($filters['date_range']);
                 if ($date_condition) {
                     $sql .= " AND " . $date_condition;
                 }
@@ -304,7 +364,7 @@ class ExportHandler {
         }
     }
     
-    private function getDateCondition($date_range, $table_alias = 'c') {
+    private function getDateCondition($date_range, $table_alias) {
         $now = new DateTime();
         
         switch ($date_range) {
@@ -401,28 +461,43 @@ class ExportHandler {
     private function generateExcel($data, $base_filename, $view) {
         $filename = $base_filename . '.xlsx';
         $filepath = $this->export_dir . $filename;
-        
-        // For now, create a simple Excel file using basic PHP
-        // In production, you'd use PhpSpreadsheet library
-        $file = fopen($filepath, 'w');
-        
+
+        // Use PhpSpreadsheet to generate a real Excel file
+        require_once __DIR__ . '/vendor/autoload.php';
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
         if (empty($data)) {
-            fclose($file);
+            // No data, just create an empty file with headers if possible
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save($filepath);
             return [
                 'name' => $filename,
                 'path' => $filepath,
                 'size' => filesize($filepath)
             ];
         }
-        
-        // Create a simple CSV-like format for Excel
-        fputcsv($file, array_keys($data[0]));
-        foreach ($data as $row) {
-            fputcsv($file, $row);
+
+        // Write headers
+        $headers = array_keys($data[0]);
+        foreach ($headers as $colIdx => $header) {
+            $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1);
+            $sheet->setCellValue($columnLetter . '1', $header);
         }
-        
-        fclose($file);
-        
+
+        // Write data rows
+        $rowNum = 2;
+        foreach ($data as $row) {
+            foreach ($headers as $colIdx => $header) {
+                $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx + 1);
+                $sheet->setCellValue($columnLetter . $rowNum, isset($row[$header]) ? $row[$header] : '');
+            }
+            $rowNum++;
+        }
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save($filepath);
+
         return [
             'name' => $filename,
             'path' => $filepath,
@@ -529,10 +604,15 @@ class ExportHandler {
         }
         
         // Set headers for download
+        // Clean (end) any output buffers to avoid corrupting the download
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
         header('Content-Type: application/octet-stream');
         header('Content-Disposition: attachment; filename="' . basename($file_path) . '"');
         header('Content-Length: ' . filesize($file_path));
-        
+
         // Output file
         readfile($file_path);
         exit();
@@ -575,6 +655,14 @@ if (basename($_SERVER['PHP_SELF']) === 'export_handler.php') {
                     
                     $result = $export_handler->processExport($export_type, $export_format, $export_view, $filters, $selected_fields);
                     
+                    // Clean any buffered output (notices/warnings) before sending JSON
+                    if (ob_get_length() !== false) {
+                        $buffered = ob_get_clean();
+                        if (!empty($buffered)) {
+                            error_log("export_handler buffered output before JSON: " . $buffered);
+                        }
+                    }
+
                     header('Content-Type: application/json');
                     echo json_encode($result);
                     break;
@@ -584,6 +672,14 @@ if (basename($_SERVER['PHP_SELF']) === 'export_handler.php') {
             }
             
         } catch (Exception $e) {
+            // Clean any buffered output
+            if (ob_get_length() !== false) {
+                $buffered = ob_get_clean();
+                if (!empty($buffered)) {
+                    error_log("export_handler buffered output on exception: " . $buffered);
+                }
+            }
+
             header('Content-Type: application/json');
             echo json_encode([
                 'success' => false,
@@ -596,7 +692,9 @@ if (basename($_SERVER['PHP_SELF']) === 'export_handler.php') {
     if (isset($_GET['download']) && isset($_GET['file'])) {
         try {
             $export_handler = new ExportHandler($pdo, $_SESSION['admin_id']);
-            $file_path = $export_handler->export_dir . $_GET['file'];
+            $export_dir = (new ReflectionClass($export_handler))->getProperty('export_dir');
+            $export_dir->setAccessible(true);
+            $file_path = $export_dir->getValue($export_handler) . $_GET['file'];
             $export_handler->downloadFile($file_path);
         } catch (Exception $e) {
             http_response_code(404);

@@ -2,14 +2,11 @@
 // This file should be run as a cron job to process alerts
 // Example cron entry: */15 * * * * /usr/bin/php /path/to/process_alerts.php
 
-// Database connection
-$host = 'localhost';
-$dbname = 'report-database';
-$username = 'root';
-$password = '';
+require_once 'config.php';
 
+// Database connection
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch(PDOException $e) {
     error_log("Database connection failed: " . $e->getMessage());
@@ -252,9 +249,15 @@ function createAlertNotification($pdo, $rule, $item, $metric_value, $alert_messa
 }
 
 function sendAlertEmail($rule, $item, $alert_message) {
-    // Simple mail function - in production, use a proper SMTP library
+    // Use EmailService for robust SMTP and fallback support
+    require_once __DIR__ . '/classes/EmailService.php';
+    $emailService = new EmailService();
+
+    // In a real implementation, fetch the admin's email from the database
+    $admin_email = defined('FROM_EMAIL') ? FROM_EMAIL : 'admin@yourdomain.com';
+
     $subject = "Alert: {$rule['name']} - {$item['entity_name']}";
-    
+
     $html_content = "
     <!DOCTYPE html>
     <html>
@@ -277,22 +280,18 @@ function sendAlertEmail($rule, $item, $alert_message) {
                 <h2>🚨 Alert Triggered</h2>
                 <p>{$rule['name']}</p>
             </div>
-            
             <div class='content'>
                 <div class='alert-details'>
                     <p><strong>Alert Message:</strong> {$alert_message}</p>
                 </div>
-                
                 <h3>Details:</h3>
                 <ul>
                     <li><strong>Entity:</strong> {$item['entity_name']} ({$item['entity_type']})</li>
                     <li><strong>Account:</strong> {$item['account_name']}</li>
                     <li><strong>Triggered:</strong> " . date('F j, Y g:i A') . "</li>
                 </ul>
-                
                 <p>Please check your dashboard for more details and take appropriate action.</p>
             </div>
-            
             <div class='footer'>
                 <p>This is an automated alert from JJ Reporting Dashboard.</p>
                 <p>To modify or disable these alerts, please log into the dashboard.</p>
@@ -300,21 +299,10 @@ function sendAlertEmail($rule, $item, $alert_message) {
         </div>
     </body>
     </html>";
-    
-    $headers = [
-        'MIME-Version: 1.0',
-        'Content-type: text/html; charset=UTF-8',
-        'From: JJ Reporting Dashboard <alerts@yourdomain.com>',
-        'Reply-To: alerts@yourdomain.com',
-        'X-Mailer: PHP/' . phpversion()
-    ];
-    
-    $headers_string = implode("\r\n", $headers);
-    
-    // In a real implementation, you would get the admin's email from the database
-    $admin_email = 'admin@yourdomain.com'; // This should be fetched from the database
-    
-    return mail($admin_email, $subject, $html_content, $headers_string);
+
+    $text_content = strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $html_content));
+
+    return $emailService->sendEmail($admin_email, $subject, $html_content, $text_content);
 }
 
 function logAlertExecution($pdo, $rule_id, $alerts_triggered, $status, $error_message = null) {

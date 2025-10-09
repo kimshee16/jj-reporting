@@ -12,14 +12,11 @@ if (empty($account_id)) {
     exit();
 }
 
-// Database connection
-$host = 'localhost';
-$dbname = 'report-database';
-$username = 'root';
-$password = '';
+require_once 'config.php';
 
+// Database connection
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch(PDOException $e) {
     die("Connection failed: " . $e->getMessage());
@@ -506,9 +503,6 @@ include 'templates/header.php';
                                                     <button class="action-btn" onclick="viewCampaignDetails('<?php echo htmlspecialchars($campaign_id); ?>')" title="View Details">
                                                         <i class="fas fa-eye"></i>
                                                     </button>
-                                                    <button class="action-btn" onclick="addToReport('<?php echo htmlspecialchars($campaign_id); ?>')" title="Add to Report">
-                                                        <i class="fas fa-plus"></i>
-                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -523,17 +517,34 @@ include 'templates/header.php';
     </main>
 
     <?php 
-    $inline_scripts = '
+    $js_account_id = json_encode($account_id);
+
+    $inline_scripts = <<<JS
         function exportCampaigns() {
+            // Try to open the modal safely. If the modal element is missing, fall back to a direct export link.
             try {
-                // Open the export modal instead of redirecting
-                openExportModal();
+                if (typeof openExportModal === 'function') {
+                    openExportModal();
+                    return;
+                }
+
+                // If openExportModal isn't defined for some reason, try to open the modal element directly
+                const modal = document.getElementById('exportModal');
+                if (modal) {
+                    modal.style.display = 'block';
+                    return;
+                }
+
+                // Fallback: perform a direct GET export (CSV) so the user still gets a file.
+                console.warn('Export modal not available, falling back to direct export.');
+                const accountId = encodeURIComponent($js_account_id);
+                window.location.href = 'export_handler.php?download=1&file=campaigns_' + accountId + '.csv';
             } catch (error) {
-                console.error("Error exporting campaigns:", error);
-                alert("Error exporting campaigns. Please try again.");
+                console.error('Error exporting campaigns:', error);
+                alert('Error exporting campaigns. Please try again.');
             }
         }
-        
+
         function viewAdSets(campaignId, accountId) {
             try {
                 if (!campaignId) {
@@ -581,7 +592,7 @@ include 'templates/header.php';
                 console.error("Error setting up filter listeners:", error);
             }
         });
-    ';
+JS;
 ?>
 
 <!-- Export Modal -->
@@ -671,9 +682,9 @@ include 'templates/header.php';
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
+                <div class="modal-footer">
                 <button type="button" class="btn btn-outline" onclick="closeExportModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Export Data</button>
+                <button type="button" class="btn btn-primary" onclick="submitExportForm()">Export Data</button>
             </div>
         </form>
     </div>
@@ -688,48 +699,63 @@ function closeExportModal() {
     document.getElementById('exportModal').style.display = 'none';
 }
 
-// Handle export form submission
-document.getElementById('exportForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    const formData = new FormData(this);
-    const submitBtn = this.querySelector('button[type="submit"]');
-    const originalText = submitBtn.innerHTML;
-    
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
-    submitBtn.disabled = true;
-    
-    fetch('export_handler.php', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            // Show success message
-            alert('Export completed successfully! File: ' + data.file_name);
-            
-            // Create download link
-            const downloadLink = document.createElement('a');
-            downloadLink.href = 'export_handler.php?download=1&file=' + encodeURIComponent(data.file_name);
-            downloadLink.download = data.file_name;
-            document.body.appendChild(downloadLink);
-            downloadLink.click();
-            document.body.removeChild(downloadLink);
-            
-            closeExportModal();
-        } else {
-            alert('Export failed: ' + data.error);
+function submitExportForm() {
+    try {
+        const form = document.getElementById('exportForm');
+        if (!form) return alert('Export form not found');
+
+        const submitBtn = form.querySelector('button.btn-primary');
+        const originalText = submitBtn ? submitBtn.innerHTML : '';
+
+        if (submitBtn) {
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
+            submitBtn.disabled = true;
         }
-    })
-    .catch(error => {
-        console.error('Export error:', error);
-        alert('Export failed: ' + error.message);
-    })
-    .finally(() => {
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
-    });
+
+        const formData = new FormData(form);
+
+        fetch('export_handler.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Export completed successfully! File: ' + data.file_name);
+
+                const downloadUrl = 'export_handler.php?download=1&file=' + encodeURIComponent(data.file_name);
+                const downloadLink = document.createElement('a');
+                downloadLink.href = downloadUrl;
+                downloadLink.download = data.file_name;
+                downloadLink.style.display = 'none';
+                document.body.appendChild(downloadLink);
+
+                try { downloadLink.click(); } catch (err) { console.warn('Programmatic click failed', err); }
+
+                // Always navigate as a fallback to ensure browser requests the download URL
+                window.location.href = downloadUrl;
+
+                try { document.body.removeChild(downloadLink); } catch (e) {}
+                closeExportModal();
+            } else {
+                alert('Export failed: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Export error:', error);
+            alert('Export failed: ' + (error.message || error));
+        })
+        .finally(() => {
+            if (submitBtn) {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+
+    } catch (e) {
+        console.error('submitExportForm error:', e);
+        alert('Error exporting campaigns. Please try again.');
+    }
 }
 
 // Close modal when clicking outside

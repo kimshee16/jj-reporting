@@ -9,14 +9,11 @@ session_start();
 echo "<p>Session admin_logged_in: " . (isset($_SESSION['admin_logged_in']) ? 'true' : 'false') . "</p>";
 echo "<p>Session admin_id: " . ($_SESSION['admin_id'] ?? 'not set') . "</p>";
 
-// Test database connection
-$host = 'localhost';
-$dbname = 'report-database';
-$username = 'root';
-$password = '';
+require_once 'config.php';
 
+// Test database connection
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     echo "<p>✓ Database connection successful</p>";
 } catch(PDOException $e) {

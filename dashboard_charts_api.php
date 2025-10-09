@@ -29,6 +29,9 @@ try {
         $period = 30;
     }
     
+    // Compute start date in PHP because placeholders can't be used inside INTERVAL expressions reliably
+    $start_date = date('Y-m-d', strtotime("-{$period} days"));
+
     // Get performance data for the specified period
     $performance_sql = "
         SELECT 
@@ -42,15 +45,15 @@ try {
         INNER JOIN facebook_ads_accounts a ON c.account_id COLLATE utf8mb4_unicode_ci = a.act_id COLLATE utf8mb4_unicode_ci
         INNER JOIN facebook_access_tokens fat ON a.access_token_id = fat.id
         WHERE fat.admin_id = :admin_id 
-        AND c.updated_at >= DATE_SUB(CURDATE(), INTERVAL :period DAY)
+        AND c.updated_at >= :start_date
         AND c.status = 'ACTIVE'
         GROUP BY DATE(c.updated_at)
         ORDER BY date ASC
     ";
-    
+
     $stmt = $pdo->prepare($performance_sql);
     $stmt->bindParam(':admin_id', $admin_id);
-    $stmt->bindParam(':period', $period);
+    $stmt->bindParam(':start_date', $start_date);
     $stmt->execute();
     $performance_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
@@ -65,15 +68,15 @@ try {
         INNER JOIN facebook_ads_accounts fa ON a.account_id COLLATE utf8mb4_unicode_ci = fa.act_id COLLATE utf8mb4_unicode_ci
         INNER JOIN facebook_access_tokens fat ON fa.access_token_id = fat.id
         WHERE fat.admin_id = :admin_id 
-        AND a.last_synced_at >= DATE_SUB(CURDATE(), INTERVAL :period DAY)
+        AND a.last_synced_at >= :start_date
         AND a.spend > 0
         GROUP BY platform
         ORDER BY platform_spend DESC
     ";
-    
+
     $stmt = $pdo->prepare($platform_sql);
     $stmt->bindParam(':admin_id', $admin_id);
-    $stmt->bindParam(':period', $period);
+    $stmt->bindParam(':start_date', $start_date);
     $stmt->execute();
     $platform_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
@@ -89,13 +92,13 @@ try {
             INNER JOIN facebook_ads_accounts fa ON c.account_id COLLATE utf8mb4_unicode_ci = fa.act_id COLLATE utf8mb4_unicode_ci
             INNER JOIN facebook_access_tokens fat ON fa.access_token_id = fat.id
             WHERE fat.admin_id = :admin_id 
-            AND c.updated_at >= DATE_SUB(CURDATE(), INTERVAL :period DAY)
+            AND c.updated_at >= :start_date
             AND c.total_spend > 0
         ";
-        
+
         $stmt = $pdo->prepare($platform_fallback_sql);
         $stmt->bindParam(':admin_id', $admin_id);
-        $stmt->bindParam(':period', $period);
+        $stmt->bindParam(':start_date', $start_date);
         $stmt->execute();
         $fallback_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
@@ -137,16 +140,16 @@ try {
         INNER JOIN facebook_ads_accounts_campaigns c ON a.act_id COLLATE utf8mb4_unicode_ci = c.account_id COLLATE utf8mb4_unicode_ci
         INNER JOIN facebook_access_tokens fat ON a.access_token_id = fat.id
         WHERE fat.admin_id = :admin_id 
-        AND c.updated_at >= DATE_SUB(CURDATE(), INTERVAL :period DAY)
+        AND c.updated_at >= :start_date
         GROUP BY a.act_id, a.act_name
         HAVING account_spend > 0
         ORDER BY account_spend DESC
         LIMIT 10
     ";
-    
+
     $stmt = $pdo->prepare($account_performance_sql);
     $stmt->bindParam(':admin_id', $admin_id);
-    $stmt->bindParam(':period', $period);
+    $stmt->bindParam(':start_date', $start_date);
     $stmt->execute();
     $account_performance = $stmt->fetchAll(PDO::FETCH_ASSOC);
     

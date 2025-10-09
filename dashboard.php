@@ -7,6 +7,10 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     exit();
 }
 
+
+// Set admin_id from session for use in queries
+$admin_id = $_SESSION['admin_id'];
+
 // Set page variables for template
 $page_title = 'JJ Reporting Dashboard';
 $additional_scripts = [
@@ -333,15 +337,15 @@ include 'templates/header.php';
                                     <div class="campaign-metrics">
                                         <div class="metric">
                                             <span class="metric-label">ROAS</span>
-                                            <span class="metric-value"><?php echo number_format($campaign['roas'], 2); ?>x</span>
+                                            <span class="metric-value"><?php if(!empty($campaign['roas'])) {echo number_format($campaign['roas'], 2);} else { echo 0;} ?>x</span>
                                         </div>
                                         <div class="metric">
                                             <span class="metric-label">Spend</span>
-                                            <span class="metric-value">$<?php echo number_format($campaign['total_spend'], 2); ?></span>
+                                            <span class="metric-value">$<?php if(!empty($campaign['total_spend'])) {echo number_format($campaign['total_spend'], 2);} else { echo 0;} ?></span>
                                         </div>
                                         <div class="metric">
                                             <span class="metric-label">CTR</span>
-                                            <span class="metric-value"><?php echo number_format($campaign['ctr'], 2); ?>%</span>
+                                            <span class="metric-value"><?php if(!empty($campaign['ctr'])) { echo number_format($campaign['ctr'], 2);} else { echo 0;} ?>%</span>
                                         </div>
                                     </div>
                                 </div>
@@ -368,15 +372,15 @@ include 'templates/header.php';
                                     <div class="campaign-metrics">
                                         <div class="metric">
                                             <span class="metric-label">ROAS</span>
-                                            <span class="metric-value"><?php echo number_format($campaign['roas'], 2); ?>x</span>
+                                            <span class="metric-value"><?php if(!empty($campaign['roas'])) {echo number_format($campaign['roas'], 2);} else { echo 0;} ?>x</span>
                                         </div>
                                         <div class="metric">
                                             <span class="metric-label">Spend</span>
-                                            <span class="metric-value">$<?php echo number_format($campaign['total_spend'], 2); ?></span>
+                                            <span class="metric-value">$<?php if(!empty($campaign['total_spend'])) {echo number_format($campaign['total_spend'], 2);} else { echo 0;} ?></span>
                                         </div>
                                         <div class="metric">
                                             <span class="metric-label">CTR</span>
-                                            <span class="metric-value"><?php echo number_format($campaign['ctr'], 2); ?>%</span>
+                                            <span class="metric-value"><?php if(!empty($campaign['ctr'])) {echo number_format($campaign['ctr'], 2);} else { echo 0;} ?>%</span>
                                         </div>
                                     </div>
                                 </div>
@@ -407,8 +411,8 @@ include 'templates/header.php';
                                     <p class="alert-type"><?php echo htmlspecialchars($alert['alert_type']); ?></p>
                                     <p class="alert-details">
                                         Account: <?php echo htmlspecialchars($alert['account_name']); ?> | 
-                                        Spend: $<?php echo number_format($alert['total_spend'], 2); ?> | 
-                                        ROAS: <?php echo number_format($alert['roas'], 2); ?>x
+                                        Spend: $<?php if(!empty($alert['total_spend'])) {echo number_format($alert['total_spend'], 2);} else { echo 0;} ?> | 
+                                        ROAS: <?php if(!empty($alert['roas'])) {echo number_format($alert['roas'], 2);} else { echo 0;} ?>x
                                     </p>
                                 </div>
                             </div>

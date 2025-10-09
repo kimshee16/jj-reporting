@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const adminId = window.ADMIN_ID || (typeof ADMIN_ID !== 'undefined' ? ADMIN_ID : (window.sessionAdminId || ''));
     console.log(adminId);
-    let url = `global_search_api.php?q=${encodeURIComponent(query)}&limit=5`;
+    let url = `global_search_api.php?q=${encodeURIComponent(query)}`;
     if (adminId) url += `&admin=${encodeURIComponent(adminId)}`;
     fetch(url)
             .then(response => response.json())

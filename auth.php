@@ -1,14 +1,11 @@
 <?php
 session_start();
 
-// Database connection (replace with your actual database credentials)
-$host = 'localhost';
-$dbname = 'report-database';
-$username = 'root';
-$password = '';
+require_once 'config.php';
 
+// Database connection
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch(PDOException $e) {
     http_response_code(500);

@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_once 'export_handler.php';
     $export_handler = new ExportHandler($pdo, $admin_id);
     $result = $export_handler->processExport($export_type, $export_format, $export_view, $filters, $selected_fields);
-    
+    echo $_POST['export_type'];
     if ($result['success']) {
         $success_message = "Export completed successfully! File: " . $result['file_name'];
     } else {
@@ -118,11 +118,11 @@ include 'templates/sidebar.php';
                     <div class="form-group">
                         <label for="date_range">Date Range</label>
                         <select id="date_range" name="filters[date_range]">
+                            <option value="all" selected>All</option>
                             <option value="last_1_days">Last 1 Day</option>
-                            <option value="last_7_days" selected>Last 7 Days</option>
+                            <option value="last_7_days">Last 7 Days</option>
                             <option value="last_30_days">Last 30 Days</option>
                             <option value="last_90_days">Last 90 Days</option>
-                            <option value="custom">Custom Range</option>
                         </select>
                     </div>
 

@@ -8,14 +8,11 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     exit();
 }
 
-// Database connection
-$host = 'localhost';
-$dbname = 'report-database';
-$username = 'root';
-$password = '';
+require_once 'config.php';
 
+// Database connection
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME, DB_USER, DB_PASS);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch(PDOException $e) {
     die("Connection failed: " . $e->getMessage());
@@ -444,7 +441,7 @@ include 'templates/sidebar.php';
                                         <span class="detail-label">Format:</span>
                                         <span class="detail-value"><?php echo strtoupper($export['export_format']); ?></span>
                                         <span class="detail-label">Records:</span>
-                                        <span class="detail-value"><?php echo number_format($export['record_count']); ?></span>
+                                        <span class="detail-value"><?php echo is_numeric($export['record_count']) ? number_format($export['record_count']) : '0'; ?></span>
                                     </div>
                                     <?php if ($export['job_name']): ?>
                                         <div class="detail-row">
@@ -480,7 +477,12 @@ include 'templates/sidebar.php';
                             </div>
                             <div class="history-actions">
                                 <?php if ($export['status'] === 'completed'): ?>
-                                    <a href="/exports/<?php echo basename($export['file_path']); ?>" class="btn btn-primary" download>
+                                    <?php
+                                    // Build correct download URL relative to the current script
+                                    $baseUrl = rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
+                                    $downloadUrl = $baseUrl . '/exports/' . rawurlencode(basename($export['file_path']));
+                                    ?>
+                                    <a href="<?php echo $downloadUrl; ?>" class="btn btn-primary" download>
                                         <i class="fas fa-download"></i> Download
                                     </a>
                                 <?php endif; ?>
