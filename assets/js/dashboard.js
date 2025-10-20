@@ -420,6 +420,16 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
+        // Manual Account Form
+        const manualAccountForm = document.getElementById('manualAccountForm');
+        if (manualAccountForm) {
+            manualAccountForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                saveManualAccount();
+            });
+        }
+        
         // Meta OAuth Button
         const metaOAuthBtn = document.getElementById('metaOAuthBtn');
         if (metaOAuthBtn) {
@@ -456,6 +466,72 @@ document.addEventListener('DOMContentLoaded', function() {
     function initiateMetaOAuth() {
         // Redirect to OAuth handler
         window.location.href = 'oauth.php?action=connect';
+    }
+    
+    function saveManualAccount() {
+        const accountName = document.getElementById('accountName').value.trim();
+        const accountId = document.getElementById('accountId').value.trim();
+        const saveBtn = document.getElementById('saveManualAccountBtn');
+        
+        // Validate inputs
+        if (!accountName || !accountId) {
+            showNotification('Please fill in both account name and account ID', 'error');
+            return;
+        }
+        
+        // Validate account ID format (should be numeric)
+        if (!/^\d+$/.test(accountId)) {
+            showNotification('Account ID should contain only numbers (e.g., 123456789)', 'error');
+            return;
+        }
+        
+        // Add act_ prefix to account ID
+        const fullAccountId = 'act_' + accountId;
+        
+        // Show loading state
+        const originalText = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        saveBtn.disabled = true;
+        
+        // Prepare data
+        const formData = new FormData();
+        formData.append('action', 'save_manual_account');
+        formData.append('account_name', accountName);
+        formData.append('account_id', fullAccountId);
+        
+        // Send request
+        fetch('accounts_api.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('Account saved successfully!', 'success');
+                
+                // Clear form
+                document.getElementById('accountName').value = '';
+                document.getElementById('accountId').value = '';
+                
+                // Close modal
+                const modal = document.getElementById('connectAccountModal');
+                modal.style.display = 'none';
+                
+                // Refresh dashboard data
+                loadDashboardData();
+            } else {
+                showNotification(`Error: ${data.error}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error saving manual account:', error);
+            showNotification('Failed to save account. Please try again.', 'error');
+        })
+        .finally(() => {
+            // Reset button state
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
+        });
     }
     
 

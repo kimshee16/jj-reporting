@@ -63,24 +63,3 @@ echo "<li>The access token is valid and not expired</li>";
 echo "<li>Your app is in the correct mode (Development/Live)</li>";
 echo "</ul>";
 ?>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

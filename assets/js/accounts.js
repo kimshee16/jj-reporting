@@ -34,19 +34,60 @@ document.addEventListener('DOMContentLoaded', function() {
     
     
     function setupEventListeners() {
+        console.log('Setting up event listeners...');
+        
         // Connect Account Button
         const connectAccountBtn = document.getElementById('connectAccountBtn');
+        const connectAccountModal = document.getElementById('connectAccountModal');
         
-        if (connectAccountBtn) {
-            connectAccountBtn.addEventListener('click', function() {
-                window.location.href = 'oauth.php?action=connect';
+        console.log('Connect Account Button:', connectAccountBtn);
+        console.log('Connect Account Modal:', connectAccountModal);
+        
+        if (connectAccountBtn && connectAccountModal) {
+            console.log('Adding click listener to Connect Account Button');
+            connectAccountBtn.addEventListener('click', function(e) {
+                console.log('Connect Account Button clicked!');
+                e.preventDefault();
+                e.stopPropagation();
+                connectAccountModal.style.display = 'block';
+            });
+            
+            // Close modal
+            const closeBtn = connectAccountModal.querySelector('.close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function() {
+                    connectAccountModal.style.display = 'none';
+                });
+            }
+            
+            // Close modal when clicking outside
+            window.addEventListener('click', function(e) {
+                if (e.target === connectAccountModal) {
+                    connectAccountModal.style.display = 'none';
+                }
+            });
+        } else {
+            console.error('Connect Account Button or Modal not found!');
+        }
+        
+        // Manual Account Form
+        const manualAccountForm = document.getElementById('manualAccountForm');
+        if (manualAccountForm) {
+            manualAccountForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                saveManualAccount();
             });
         }
         
         // Meta OAuth Button
         const metaOAuthBtn = document.getElementById('metaOAuthBtn');
+        console.log('Meta OAuth Button:', metaOAuthBtn);
         if (metaOAuthBtn) {
-            metaOAuthBtn.addEventListener('click', function() {
+            metaOAuthBtn.addEventListener('click', function(e) {
+                console.log('Meta OAuth Button clicked!');
+                e.preventDefault();
+                e.stopPropagation();
                 initiateMetaOAuth();
             });
         }
@@ -84,82 +125,77 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    function initiateMetaOAuth() {
-        // Simulate OAuth process
-        const oauthBtn = document.getElementById('metaOAuthBtn');
-        const originalText = oauthBtn.innerHTML;
+    function saveManualAccount() {
+        const accountName = document.getElementById('accountName').value.trim();
+        const accountId = document.getElementById('accountId').value.trim();
+        const saveBtn = document.getElementById('saveManualAccountBtn');
         
-        oauthBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
-        oauthBtn.disabled = true;
-        
-        // Simulate OAuth flow
-        setTimeout(() => {
-            // Show account selection
-            document.getElementById('accountSelection').style.display = 'block';
-            
-            // Simulate available accounts
-            const availableAccounts = [
-                { id: 'act_new_001', name: 'New Business Account', currency: 'USD', timezone: 'America/Chicago' },
-                { id: 'act_new_002', name: 'Marketing Account', currency: 'USD', timezone: 'America/Denver' }
-            ];
-            
-            const accountsContainer = document.getElementById('availableAccounts');
-            accountsContainer.innerHTML = availableAccounts.map(account => `
-                <div class="account-item">
-                    <input type="checkbox" id="account_${account.id}" value="${account.id}">
-                    <div class="account-info">
-                        <h5>${account.name}</h5>
-                        <p>ID: ${account.id} | ${account.currency} | ${account.timezone}</p>
-                    </div>
-                </div>
-            `).join('');
-            
-            oauthBtn.innerHTML = '<i class="fas fa-check"></i> Connected Successfully';
-            oauthBtn.style.background = '#27ae60';
-            
-            // Add connect accounts button
-            const connectBtn = document.createElement('button');
-            connectBtn.className = 'btn btn-primary';
-            connectBtn.innerHTML = '<i class="fas fa-link"></i> Connect Selected Accounts';
-            connectBtn.style.marginTop = '20px';
-            connectBtn.addEventListener('click', function() {
-                connectSelectedAccounts();
-            });
-            
-            document.getElementById('accountSelection').appendChild(connectBtn);
-        }, 2000);
-    }
-    
-    function connectSelectedAccounts() {
-        const selectedAccounts = document.querySelectorAll('#accountSelection input[type="checkbox"]:checked');
-        
-        if (selectedAccounts.length === 0) {
-            alert('Please select at least one account to connect.');
+        // Validate inputs
+        if (!accountName || !accountId) {
+            showNotification('Please fill in both account name and account ID', 'error');
             return;
         }
         
-        // Simulate connecting accounts
-        const connectBtn = document.querySelector('#accountSelection .btn');
-        const originalText = connectBtn.innerHTML;
+        // Validate account ID format (should be numeric)
+        if (!/^\d+$/.test(accountId)) {
+            showNotification('Account ID should contain only numbers (e.g., 123456789)', 'error');
+            return;
+        }
         
-        connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
-        connectBtn.disabled = true;
+        // Add act_ prefix to account ID
+        const fullAccountId = 'act_' + accountId;
         
-        setTimeout(() => {
-            alert(`Successfully connected ${selectedAccounts.length} account(s)!`);
-            document.getElementById('connectAccountModal').style.display = 'none';
-            
-            // Reset modal state
-            document.getElementById('accountSelection').style.display = 'none';
-            document.getElementById('metaOAuthBtn').innerHTML = '<i class="fab fa-facebook"></i> Connect with Facebook';
-            document.getElementById('metaOAuthBtn').disabled = false;
-            document.getElementById('metaOAuthBtn').style.background = '';
-            
-            // Refresh accounts data
-            loadAccountsData();
-            showNotification('New accounts connected successfully!', 'success');
-        }, 1500);
+        // Show loading state
+        const originalText = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        saveBtn.disabled = true;
+        
+        // Prepare data
+        const formData = new FormData();
+        formData.append('action', 'save_manual_account');
+        formData.append('account_name', accountName);
+        formData.append('account_id', fullAccountId);
+        
+        // Send request
+        fetch('accounts_api.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('Account saved successfully!', 'success');
+                
+                // Clear form
+                document.getElementById('accountName').value = '';
+                document.getElementById('accountId').value = '';
+                
+                // Close modal
+                const modal = document.getElementById('connectAccountModal');
+                modal.style.display = 'none';
+                
+                // Refresh accounts data
+                loadAccountsData();
+            } else {
+                showNotification(`Error: ${data.error}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error saving manual account:', error);
+            showNotification('Failed to save account. Please try again.', 'error');
+        })
+        .finally(() => {
+            // Reset button state
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
+        });
     }
+    
+    function initiateMetaOAuth() {
+        // Redirect to OAuth handler
+        window.location.href = 'oauth.php?action=connect';
+    }
+    
     
     function refreshAccountsData() {
         const refreshBtn = document.getElementById('refreshDataBtn');
@@ -352,7 +388,7 @@ function renderAccountsTable(accounts) {
                     <i class="fas fa-building"></i>
                     <h3>No Ad Accounts Connected</h3>
                     <p>Connect your first Meta ad account to get started</p>
-                    <button class="btn btn-primary" onclick="window.location.href='oauth.php?action=connect'">
+                    <button class="btn btn-primary" onclick="document.getElementById('connectAccountModal').style.display='block'">
                         <i class="fas fa-plus"></i> Connect Account
                     </button>
                 </td>

@@ -10,7 +10,7 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
     // Get the action parameter
-    $action = $_GET['action'] ?? '';
+    $action = $_GET['action'] ?? $_POST['action'] ?? '';
     
     switch ($action) {
         case 'get_accounts':
@@ -203,6 +203,74 @@ try {
                 'success' => true,
                 'message' => 'Account synced successfully',
                 'data' => $apiData
+            ]);
+            break;
+            
+        case 'save_manual_account':
+            // Save manually entered account
+            $accountName = $_POST['account_name'] ?? '';
+            $accountId = $_POST['account_id'] ?? '';
+            
+            if (empty($accountName) || empty($accountId)) {
+                throw new Exception('Account name and ID are required');
+            }
+            
+            // Validate account ID format
+            if (!preg_match('/^act_\d+$/', $accountId)) {
+                throw new Exception('Account ID must be in format act_123456789');
+            }
+            
+            // Get admin ID from session
+            $admin_id = $_SESSION['user_id'] ?? 1;
+            
+            // Check if account already exists
+            $checkStmt = $pdo->prepare("
+                SELECT id FROM facebook_ads_accounts 
+                WHERE act_id = ?
+            ");
+            $checkStmt->execute([$accountId]);
+            $existingAccount = $checkStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($existingAccount) {
+                throw new Exception('Account with this ID already exists');
+            }
+            
+            // Get or create a default access token for manual accounts
+            // For manual accounts, we'll use the existing access token or create a placeholder
+            $tokenStmt = $pdo->prepare("
+                SELECT id FROM facebook_access_tokens 
+                WHERE admin_id = ?
+                LIMIT 1
+            ");
+            $tokenStmt->execute([$admin_id]);
+            $tokenData = $tokenStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$tokenData) {
+                // Create a placeholder access token for manual accounts
+                $insertTokenStmt = $pdo->prepare("
+                    INSERT INTO facebook_access_tokens 
+                    (admin_id, access_token, last_update, created_at, updated_at) 
+                    VALUES (?, 'manual_placeholder', NOW(), NOW(), NOW())
+                ");
+                $insertTokenStmt->execute([$admin_id]);
+                $tokenId = $pdo->lastInsertId();
+            } else {
+                $tokenId = $tokenData['id'];
+            }
+            
+            // Insert the manual account
+            $insertStmt = $pdo->prepare("
+                INSERT INTO facebook_ads_accounts 
+                (access_token_id, act_name, act_id, created_at, updated_at) 
+                VALUES (?, ?, ?, NOW(), NOW())
+            ");
+            
+            $insertStmt->execute([$tokenId, $accountName, $accountId]);
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Account saved successfully',
+                'account_id' => $accountId
             ]);
             break;
             

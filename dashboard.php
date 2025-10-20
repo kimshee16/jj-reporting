@@ -443,13 +443,40 @@ include 'templates/header.php';
                 <span class="close">&times;</span>
             </div>
             <div class="modal-body">
-                <p>Connect your Meta Ad accounts to start analyzing performance data.</p>
+                <p>Add your Meta Ad account manually or connect through Facebook.</p>
+                
+                <!-- Manual Entry Section -->
+                <div class="manual-entry-section">
+                    <h4>Manual Entry</h4>
+                    <form id="manualAccountForm">
+                        <div class="form-group">
+                            <label for="accountName">Account Name</label>
+                            <input type="text" id="accountName" name="accountName" placeholder="Enter account name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="accountId">Account ID</label>
+                            <input type="text" id="accountId" name="accountId" placeholder="Enter account ID (e.g., 123456789)" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="saveManualAccountBtn">
+                            <i class="fas fa-save"></i>
+                            Save Account
+                        </button>
+                    </form>
+                </div>
+                
+                <!-- Divider -->
+                <div class="divider">
+                    <span>OR</span>
+                </div>
+                
+                <!-- Facebook OAuth Section -->
                 <div class="oauth-section">
                     <button class="btn btn-facebook" id="metaOAuthBtn">
                         <i class="fab fa-facebook"></i>
                         Connect with Facebook
                     </button>
                 </div>
+                
                 <div class="account-selection" id="accountSelection" style="display: none;">
                     <h4>Select Accounts to Connect</h4>
                     <div id="availableAccounts"></div>
